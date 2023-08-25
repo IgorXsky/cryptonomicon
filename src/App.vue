@@ -12,7 +12,7 @@
         <div class="max-w-xs">
           <div class="mt-1 relative rounded-md shadow-md">
             <input
-              v-on:keydown.enter="add"
+              v-on:keydown.enter="addNewCurrency"
               v-model="newCurrency"
               type="text"
               name="wallet"
@@ -63,10 +63,10 @@
       <hr class="w-full border-t border-gray-600 my-4" />
       <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div 
-          v-for="currency in currencies" 
+          v-for="currency in paginatedCurrencies" 
           :key="currency.name" 
           @click="selectCurrency(currency)" 
-          :class="{'border-4': sel == currency}"
+          :class="{'border-4': selectedCurrency == currency}"
           class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
         >
           <div class="px-4 py-5 sm:p-6 text-center">
@@ -97,14 +97,29 @@
           </button>
         </div>
       </dl>
+      <div><input v-model="filter" @input="page = 1"/></div>
+      <div class="content-center">
+        <button
+          v-if="page > 1"
+          :on-click="page = page -1"
+          class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+          Next
+        </button>
+        <button
+          v-if="hasNextPage"
+          :on-click="page = page +1" 
+          class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+          Prev
+        </button>
+      </div>
       <hr class="w-full border-t border-gray-600 my-4" />
-    <section v-if="sel" class="relative">
+    <section v-if="selectedCurrency" class="relative">
       <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-        {{ sel.name }} - USD
+        {{ selectedCurrency.name }} - USD
       </h3>
       <div class="flex items-end border-gray-600 border-b border-l h-64">
         <div 
-          v-for="(bar, idx) in normalizeGraph()"
+          v-for="(bar, idx) in normalizedGraph"
           :key="idx"
           :style="{height: `${bar}%`}"
           class="bg-purple-800 border w-10"
@@ -142,19 +157,115 @@
 </template>
 
 <script>
+
+import { loadCurrencies } from  './api'
+
+const PER_PAGE = 6;
+const EX_ROUND = 2;
+
 export default {
   name: 'App',
   data() {
     return {
       newCurrency: "",
       currencies: [],
-      sel: null,
-      graph: []
+      selectedCurrency: null,
+      graph: [],
+      page: 1,
+      filter: '',
+    }
+  },
+  created() {
+    const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
+    if (windowData.filter) {
+      this.filter = windowData.filter;
+    }
+
+    if (windowData.page) {
+      this.page = windowData.page;
+    }
+
+    const currenciesData = localStorage.getItem('cryptonomicon-list');
+    if (currenciesData) {
+      this.currencies = JSON.parse(currenciesData);
+      setInterval(this.updateCurrencies, 5000);
+    }
+  },
+  computed: {
+    startIndex() {
+      return (this.page - 1) * PER_PAGE;
+    },
+    endIndex() {
+      return this.page * PER_PAGE;
+    },
+    filteredCurrencies() {
+      return this.currencies.filter((currency) => currency.name.includes(this.filter));
+    },
+    paginatedCurrencies() {
+      return this.filteredCurrencies.slice(this.startIndex, this.endIndex)
+    },
+    hasNextPage() {
+      return this.filteredCurrencies.length > this.endIndex
+    },
+    normalizedGraph() {
+      const maxValue = Math.max(...this.graph);
+      const minValue = Math.min(...this.graph);
+
+      if (maxValue === minValue) {
+        return this.graph.map(() => 50);
+      }
+
+      return this.graph.map(
+        price => 5 + ((price - minValue) * 95) / (maxValue - minValue)
+      );
+    },
+    stateOptions() {
+      return {
+        filter: this.filter,
+        page: this.page
+      }
+    }
+  },
+  watch: {
+    filter() {
+      this.page = 1;
+    },
+    stateOptions(value) {
+      window.history.pushState(
+        null, 
+        document.title, 
+        `${window.location.pathname}?filter=${value.filter}&page=${value.page}`
+      );
+    },
+    paginatedCurrencies() {
+      if (this.paginatedCurrencies.length === 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
+    selectCurrency() {
+      this.graph = [];
+    },
+    currencies() {
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.currencies));
     }
   },
   methods: {
-    add() {
-      console.log();
+    async updateCurrencies() {
+      if (this.currencies.length === 0) {
+        return;
+      }
+      const exchangeData = await loadCurrencies(this.currencies.map(c => c.name));
+      this.currencies.forEach(currency => {
+        const price = exchangeData[currency.name.toUpperCase()];
+
+        if (!price) {
+          currency.price = '-';
+          return;
+        }
+
+        const normalizedPrice = 1/price;
+        currency.price = normalizedPrice > 1 ? normalizedPrice.toFixed(EX_ROUND) : normalizedPrice.toPrecision(EX_ROUND);
+      });
     },
     addNewCurrency() {
       if (this.newCurrency) {
@@ -163,37 +274,24 @@ export default {
           price: '-'
         }
         this.newCurrency = '';
-        this.currencies.push(currentCurrency);
-        this.selectCurrency(currentCurrency);
-        setInterval(async() => {
-          const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentCurrency.name}&tsyms=USD&api_key=93d126ace6ea67e6ca421b2de3e885ecf7c71b9228233fcefb33881cde854ef1`);
-          const data = await f.json();
-          this.currencies.find(c => c.name === currentCurrency.name).price = 
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-          if (this.sel?.name === currentCurrency.name) {
-            this.graph.push(data.USD);
-          }
-        }, 5000)
+        this.currencies = [...this.currencies, currentCurrency];
+        this.updateCurrencies(this.currencies)
+        this.filter = '';
       }
     },
     selectCurrency(currency) {
-      this.sel = currency;
-      this.graph = [];
+      this.selectedCurrency = currency;
     },
     removeCurrency(currency) {
         let index = this.currencies.indexOf(currency);
+        if (this.selectedCurrency === currency) {
+          this.selectedCurrency = null;
+        }
         if (index !== -1) {
           this.currencies.splice(index, 1);
+          localStorage.setItem("cryptonomicon-list", JSON.stringify(this.currencies));
         }
     },
-    normalizeGraph() {
-      const maxValue = Math.max(...this.graph);
-      const minValue = Math.min(...this.graph);
-      return this.graph.map(
-        price => 5 + ((price - minValue) * 95) / (maxValue - minValue)
-      );
-    }
   }
 }
 </script>
