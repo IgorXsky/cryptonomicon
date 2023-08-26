@@ -113,8 +113,8 @@
         </button>
       </div>
       <hr class="w-full border-t border-gray-600 my-4" />
-    <section class="relative">
-      <h3 v-if="selectedCurrency" class="text-lg leading-6 font-medium text-gray-900 my-8">
+    <section v-if="selectedCurrency" class="relative">
+      <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
         {{ selectedCurrency.name }} - USD
       </h3>
       <div 
@@ -260,6 +260,9 @@ export default {
     },
     selectedCurrency() {
       this.graph = [];
+      this.$nextTick(() => {
+        this.calculateMaxGraphElements();
+      });
     },
     currencies() {
       localStorage.setItem("cryptonomicon-list", JSON.stringify(this.currencies));
