@@ -246,7 +246,7 @@ export default {
         this.page -= 1;
       }
     },
-    selectCurrency() {
+    selectedCurrency() {
       this.graph = [];
     },
     currencies() {
@@ -258,6 +258,10 @@ export default {
       this.currencies
         .filter(c => c.name === currencyName)
         .forEach(c => {
+
+          if (c === this.selectedCurrency) {
+            this.graph.push(c.price);
+          }
           c.price = price;
       });
     },
