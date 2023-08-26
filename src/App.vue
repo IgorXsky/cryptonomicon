@@ -74,7 +74,7 @@
               {{currency.name}} - USD
             </dt>
             <dd class="mt-1 text-3xl font-semibold text-gray-900">
-              {{currency.price}}
+              {{ getFormatedPrice(currency.price) }}
             </dd>
           </div>
           <div class="w-full border-t border-gray-200"></div>
@@ -158,7 +158,7 @@
 
 <script>
 
-import { loadCurrencies } from  './api'
+import { subscribeToCurrency, unsubscribeCurrency } from  './api'
 
 const PER_PAGE = 6;
 const EX_ROUND = 2;
@@ -188,7 +188,11 @@ export default {
     const currenciesData = localStorage.getItem('cryptonomicon-list');
     if (currenciesData) {
       this.currencies = JSON.parse(currenciesData);
-      setInterval(this.updateCurrencies, 5000);
+      this.currencies.forEach(currency => {
+        subscribeToCurrency(currency.name, newPrice => 
+          this.updateCurrency(currency.name, newPrice)
+        )
+      });
     }
   },
   computed: {
@@ -250,22 +254,19 @@ export default {
     }
   },
   methods: {
-    async updateCurrencies() {
-      if (this.currencies.length === 0) {
-        return;
-      }
-      const exchangeData = await loadCurrencies(this.currencies.map(c => c.name));
-      this.currencies.forEach(currency => {
-        const price = exchangeData[currency.name.toUpperCase()];
-
-        if (!price) {
-          currency.price = '-';
-          return;
-        }
-
-        const normalizedPrice = 1/price;
-        currency.price = normalizedPrice > 1 ? normalizedPrice.toFixed(EX_ROUND) : normalizedPrice.toPrecision(EX_ROUND);
+    updateCurrency(currencyName, price) {
+      this.currencies
+        .filter(c => c.name === currencyName)
+        .forEach(c => {
+          c.price = price;
       });
+    },
+    getFormatedPrice(price) {
+      if (price === '-') {
+        return price;
+      }
+      const formatedPrice = parseFloat(price);
+      return formatedPrice > 1 ? formatedPrice.toFixed(EX_ROUND) : formatedPrice.toPrecision(EX_ROUND);
     },
     addNewCurrency() {
       if (this.newCurrency) {
@@ -274,23 +275,23 @@ export default {
           price: '-'
         }
         this.newCurrency = '';
-        this.currencies = [...this.currencies, currentCurrency];
-        this.updateCurrencies(this.currencies)
         this.filter = '';
+
+        this.currencies = [...this.currencies, currentCurrency];
+        subscribeToCurrency(currentCurrency.name, newPrice => 
+          this.updateCurrency(currentCurrency.name, newPrice)
+        )
       }
     },
     selectCurrency(currency) {
       this.selectedCurrency = currency;
     },
     removeCurrency(currency) {
-        let index = this.currencies.indexOf(currency);
-        if (this.selectedCurrency === currency) {
-          this.selectedCurrency = null;
-        }
-        if (index !== -1) {
-          this.currencies.splice(index, 1);
-          localStorage.setItem("cryptonomicon-list", JSON.stringify(this.currencies));
-        }
+      this.currencies = this.currencies.filter(c => c !== currency);
+      if (this.selectedCurrency === currency) {
+        this.selectedCurrency = null;
+      }
+      unsubscribeCurrency(currency.name);
     },
   }
 }
