@@ -113,16 +113,20 @@
         </button>
       </div>
       <hr class="w-full border-t border-gray-600 my-4" />
-    <section v-if="selectedCurrency" class="relative">
-      <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
+    <section class="relative">
+      <h3 v-if="selectedCurrency" class="text-lg leading-6 font-medium text-gray-900 my-8">
         {{ selectedCurrency.name }} - USD
       </h3>
-      <div class="flex items-end border-gray-600 border-b border-l h-64">
+      <div 
+        class="flex items-end border-gray-600 border-b border-l h-64"
+        ref="graph"
+      >
         <div 
           v-for="(bar, idx) in normalizedGraph"
+          ref="graphElement"
           :key="idx"
-          :style="{height: `${bar}%`}"
-          class="bg-purple-800 border w-10"
+          :style="{height: `${bar}%`, width: `${graphElementWidht}px`}"
+          class="bg-purple-800 border"
         ></div>
       </div>
       <button
@@ -173,6 +177,8 @@ export default {
       graph: [],
       page: 1,
       filter: '',
+      maxGraphElements: 1,
+      graphElementWidht: 38,
     }
   },
   created() {
@@ -194,6 +200,12 @@ export default {
         )
       });
     }
+  },
+  mounted() {
+    window.addEventListener("resize", this.calculateMaxGraphElements);
+  },
+  beforeUnmount() {
+    window.removeEventListener("resize", this.calculateMaxGraphElements);
   },
   computed: {
     startIndex() {
@@ -254,16 +266,29 @@ export default {
     }
   },
   methods: {
+    calculateMaxGraphElements() {
+      if (!this.$refs.graph) {
+        return;
+      }
+      this.maxGraphElements = Math.round(this.$refs.graph.clientWidth / this.graphElementWidht);
+      this.updateGraphList();
+    },
+    updateGraphList() {
+      const graphLength = this.graph.length;
+      if (graphLength > this.maxGraphElements) {
+        this.graph.splice(0, graphLength - this.maxGraphElements);
+      }
+    },
     updateCurrency(currencyName, price) {
       this.currencies
         .filter(c => c.name === currencyName)
         .forEach(c => {
-
           if (c === this.selectedCurrency) {
             this.graph.push(c.price);
+            this.updateGraphList();
           }
           c.price = price;
-      });
+        });
     },
     getFormatedPrice(price) {
       if (price === '-') {
